@@ -1,6 +1,6 @@
 #include <Wire.h>
 #include "LCD_I2C.h"
-#include <DHT_Lib.h> // Biblioteca correta incluída
+#include <DHT_Lib.h>
 
 // --- Constantes ---
 #define DHT_PIN 5 // Defina aqui o pino GPIO onde o DHT está conectado
