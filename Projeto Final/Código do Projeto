@@ -1,0 +1,97 @@
+#include <Arduino.h>
+#include <Wire.h>
+#include <DHT_Lib.h>
+#include <LCD_I2C.h>
+#include <Ultrassom_Lib.h>
+#include <RFID_Lib.h>
+#include <SPI.h>
+
+Ultrassom_Lib sensor(5, 4);  // Trigger no GPIO5, Echo no GPIO4
+DHT_Lib dht(25);             // Pino GPIO25 do ESP32
+LCD_I2C lcd(0x27, 16, 2);    // Endereço I2C do display
+RFID_Lib rfid(27, 14);       // SS e RST do RFID (ajuste conforme seu módulo)
+float distancia;
+
+void setup() {
+  Serial.begin(115200);
+  SPI.begin(18, 19, 23, 27);  // (SCK, MISO, MOSI, SS)
+  dht.iniciar();
+  sensor.iniciar();
+  lcd.iniciar();
+  lcd.limpar();
+
+  lcd.escrever(0, 0, "Eletronica");
+  lcd.escrever(2, 1, "UTFPR 2025");
+  delay(4000);
+  lcd.limpar();
+  rfid.iniciar();
+}
+
+void loop() {
+  static unsigned long ultimaMedida = 0;
+  distancia = sensor.medir_distancia_cm();
+  delay(40);
+
+  // --- Se algo está a menos de 10 cm, ativa leitura RFID ---
+  if (distancia < 10) {
+
+    unsigned long inicioLeitura = millis();
+    bool tagLida = false;
+    rfid.pararLeitura(); // limpa o estado
+    delay(100);
+    rfid.iniciar();
+    delay(400); // reinicializa o leitor
+    lcd.limpar();
+    lcd.escrever(0, 0, "Esperando TAG");
+
+    // Aguarda até 5 segundos por uma tag
+    while (millis() - inicioLeitura < 5000) {
+      if (rfid.verificarTag()) {
+        lcd.limpar();
+        lcd.escrever(0, 0, "TAG LIDA");
+        lcd.escrever(0, 1, "Autorizado");
+        Serial.print("UID: ");
+        Serial.println(rfid.lerUID());
+        rfid.pararLeitura();
+        tagLida = true;
+        delay(2000);
+        break;
+      }
+      delay(50);
+    }
+
+    // Caso nenhuma tag apareça
+    if (!tagLida) {
+      lcd.limpar();
+      lcd.escrever(0, 0, "Sem TAG detect");
+      lcd.escrever(0, 1, "Acesso negado");
+      delay(2000);
+    }
+
+    lcd.limpar(); // limpa antes de voltar à leitura normal
+  }
+
+  // --- Se não há presença próxima, mostra DHT a cada 3s ---
+  else {
+    if (millis() - ultimaMedida > 3000) {
+      if (dht.ler()) {
+        float t = dht.temperatura();
+        float u = dht.umidade();
+
+        char buffer_temp[17];
+        char buffer_umid[17];
+        snprintf(buffer_temp, sizeof(buffer_temp), "Temp: %.1f%cC", t, (char)223);
+        snprintf(buffer_umid, sizeof(buffer_umid), "Umid: %.1f %%", u);
+
+        lcd.limpar();
+        lcd.escrever(0, 0, buffer_temp);
+        lcd.escrever(0, 1, buffer_umid);
+      } else {
+        lcd.limpar();
+        lcd.escrever(0, 0, "Erro de Leitura");
+        lcd.escrever(0, 1, "Verifique DHT");
+      }
+      ultimaMedida = millis();
+    }
+  }
+}
